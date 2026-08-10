@@ -30,6 +30,14 @@ This project is a job recruitment platform built to fix that gap on both sides â
 ## How to Use This Package
 
 1. Create a GitHub repo, add all these files to it, push.
-2. Open Antigravity, point it at this repo folder.
-3. Go through `PROMPTS.md` in order â€” one stage at a time. Don't skip ahead.
-4. After each stage, test manually, commit, push, deploy to Vercel.
+2. Install dependencies: `npm install`.
+3. Add your Firebase config values to `.env.local` using the placeholders in `lib/firebase.ts`.
+4. Run the app locally with `npm run dev`.
+5. Use the `/app/api` routes for server-side validation and Firestore enforcement.
+6. When deploying, connect the GitHub repo to Vercel and set the same Firebase env vars in Vercel.
+
+## Notes
+
+- The frontend uses Firebase Auth, Firestore, and Storage.
+- The `app/api/match/calculate` route is intended to forward match data to a separate C++ microservice running on `http://localhost:8080/match`.
+- `firestore.rules` includes starter security rules for user documents, recruiter job writes, and restricted application writes.
