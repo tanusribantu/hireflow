@@ -75,6 +75,52 @@ Submits a completed skill quiz.
 - Logic: grade against `quizzes/{skill}`, if passed → append to `verifiedSkills` on user doc
 - Output: `{ passed: boolean, score: number }`
 
+### Stage 2 additions
+
+The following route contracts are inferred from the expanded Stage 2 specification:
+
+### `POST /api/resume/analyze` (Stage 2)
+Extracts skills from a candidate's uploaded resume PDF.
+- Input: `{ resumeUrl }`
+- Logic: verify the authenticated candidate owns the resume, extract skills, and return normalized skill names
+- Output: `{ skills: [string] }`
+
+### `POST /api/company/verify` (Stage 2)
+Verifies a recruiter or company using a company email domain or registration document.
+- Input: `{ companyEmail?, registrationDocumentUrl? }`
+- Logic: validate the company email domain or document, then set `users/{userId}.companyVerified` to `true` when verified
+- Output: `{ verified: boolean }`
+
+### `PATCH /api/jobs/deadline` (Stage 2)
+Creates or changes an application deadline for a recruiter-owned job.
+- Input: `{ jobId, deadline }`
+- Logic: verify job ownership, update `jobs/{jobId}.deadline`, append to `deadlineHistory`, and notify users who saved the job
+- Output: `{ success: boolean }`
+
+### `POST /api/saved-jobs` (Stage 2)
+Saves a job to the authenticated candidate's bucket list.
+- Input: `{ jobId }`
+- Logic: create `users/{userId}/savedJobs/{jobId}` with `savedAt` and `status: "saved"`
+- Output: `{ success: boolean }`
+
+### `DELETE /api/saved-jobs` (Stage 2)
+Removes a job from the authenticated candidate's bucket list.
+- Input: `{ jobId }`
+- Output: `{ success: boolean }`
+
+### `GET /api/saved-jobs` (Stage 2)
+Lists the authenticated candidate's saved and missed jobs.
+- Output: `{ savedJobs: [...] }`
+
+### `GET /api/notifications` (Stage 2)
+Lists notifications for the authenticated candidate.
+- Output: `{ notifications: [...] }`
+
+### `PATCH /api/notifications/read` (Stage 2)
+Marks one of the authenticated candidate's notifications as read.
+- Input: `{ notificationId }`
+- Output: `{ success: boolean }`
+
 ### `POST /api/interview/propose` (Stage 3)
 Recruiter proposes interview slots.
 - Input: `{ applicationId, slots: [timestamp], mode }`

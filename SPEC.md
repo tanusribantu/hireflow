@@ -39,10 +39,26 @@
 
 ## Stage 2 — Recruiter Tools + Trust Layer
 
-- **Kanban pipeline**: New → Screening → Interview → Offer/Rejected (drag-and-drop or click-to-move)
-- **Skill verification quiz**: timed (30–60s/question), scenario-based, tab-focus-loss detection, produces a permanent "Verified: [Skill]" badge with date
-- **ATS match score**: keyword overlap between candidate profile/skills and job's required skills, shown as Strong/Partial/Low (not raw %)
-- **Quick-select rejection reasons**: dropdown at screening stage (Skills mismatch / Experience level / Location / Position filled)
+### Part A — Pipeline & Rejection Reasons
+- Kanban pipeline: New → Screening → Interview → Offer/Rejected, reuses `/api/applications/update-status`
+- Quick-select rejection reasons at screening stage (Skills mismatch / Experience level / Location / Position filled), optional
+- Reason visible to candidate on their status tracker
+
+### Part B — ATS Matching & Skill Verification
+- ATS match score via the C++ microservice, shown as Strong/Partial/Low
+- Skill verification quiz: timed, scenario-based, tab-focus-loss detection, permanent verified badges
+- Auto-generated rejection reason using missing-skills output when a recruiter rejects without selecting a reason, clearly labeled as system-generated
+
+### Part C — Resume Analysis & Recruiter Verification
+- Resume analyzer: extract skills from uploaded resume PDF
+- Recruiter/company verification via company email domain or registration document, shown as a "Verified Company" badge
+
+### Part D — Deadlines, Notifications & Bucket List
+- Application deadlines set by recruiter, visible to candidates
+- Recruiter can extend/prepone deadlines
+- Candidates can save jobs to a bucket list
+- Notifications for saved jobs only, on deadline changes or approaching deadlines, neutral tone
+- Missed section for saved jobs whose deadline passed without an application
 
 ---
 

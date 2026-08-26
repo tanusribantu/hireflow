@@ -37,6 +37,9 @@ jobs/{jobId}
   salaryRange: { min: number, max: number }
   status: "open" | "closed"
   createdAt: timestamp
+  deadline: timestamp
+  deadlineHistory: [{ deadline: timestamp, changedAt: timestamp }]
+  companyVerified: boolean
 ```
 
 ## `applications` collection
@@ -48,6 +51,7 @@ applications/{applicationId}
   statusHistory: [{ status: string, timestamp: timestamp }]
   matchScore: "Strong" | "Partial" | "Low"
   rejectionReason: string     // optional at screening stage, required after interview stage
+  rejectionReasonSource: "recruiter" | "system"
   appliedAt: timestamp
 
   // Stage 3 fields
@@ -74,6 +78,23 @@ users/{userId}/quizAttempts/{attemptId}
   passed: boolean
   tabFocusLossCount: number
   attemptedAt: timestamp
+```
+
+## `savedJobs` subcollection
+```
+users/{userId}/savedJobs/{jobId}
+  savedAt: timestamp
+  status: "saved" | "missed"
+```
+
+## `notifications` subcollection
+```
+users/{userId}/notifications/{notificationId}
+  type: string
+  jobId: string
+  message: string
+  read: boolean
+  createdAt: timestamp
 ```
 
 ## Relationships summary
