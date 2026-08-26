@@ -56,7 +56,10 @@ export async function POST(req: NextRequest) {
       status: newStatus,
       statusHistory: [...(application.statusHistory || []), { status: newStatus, timestamp }],
     };
-    if (newStatus === "Rejected" && rejectionReason?.trim()) update.rejectionReason = rejectionReason.trim();
+    if (newStatus === "Rejected" && rejectionReason?.trim()) {
+      update.rejectionReason = rejectionReason.trim();
+      update.rejectionReasonSource = "recruiter";
+    }
 
     await applicationRef.update(update);
     return NextResponse.json({ success: true });

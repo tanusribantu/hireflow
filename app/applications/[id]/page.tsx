@@ -113,6 +113,11 @@ export default function ApplicationPage({ params }: { params: { id: string } }) 
               <li key={i}>{s.status} — {new Date(s.timestamp).toLocaleString()}</li>
             ))}
           </ul>
+          {status === "Rejected" && app.rejectionReason && (
+            <p className="mt-3 text-sm text-red-600">
+              Reason{app.rejectionReasonSource === "system" ? " (system-generated)" : ""}: {app.rejectionReason}
+            </p>
+          )}
         </div>
 
         {canUpdate && (

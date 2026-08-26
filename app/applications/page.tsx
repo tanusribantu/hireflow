@@ -13,7 +13,19 @@ export default function MyApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  async function loadApplications(user: any) {
+    const token = await user.getIdToken();
+    const response = await fetch("/api/applications/my-applications", {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load applications");
+    setApps(data.applications || []);
+  }
+
   useEffect(() => {
+    let refreshTimer: number | undefined;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.push("/auth/signin");
@@ -21,13 +33,10 @@ export default function MyApplicationsPage() {
       }
 
       try {
-        const token = await user.getIdToken();
-        const response = await fetch("/api/applications/my-applications", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Unable to load applications");
-        setApps(data.applications || []);
+        await loadApplications(user);
+        refreshTimer = window.setInterval(() => {
+          loadApplications(user).catch((refreshError) => console.error("Failed to refresh applications:", refreshError));
+        }, 10000);
       } catch (loadError: any) {
         console.error("Failed to load my applications:", loadError);
         setError(loadError.message || "Unable to load applications");
@@ -36,7 +45,10 @@ export default function MyApplicationsPage() {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
+    };
   }, [router]);
 
   return (
@@ -91,7 +103,14 @@ export default function MyApplicationsPage() {
               </div>
 
               <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4 text-sm">
-                <span>Applied {new Date(application.appliedAt || Date.now()).toLocaleDateString()}</span>
+                <div>
+                  <span>Applied {new Date(application.appliedAt || Date.now()).toLocaleDateString()}</span>
+                  {application.status === "Rejected" && application.rejectionReason && (
+                    <p className="mt-1 text-red-600">
+                      Reason{application.rejectionReasonSource === "system" ? " (system-generated)" : ""}: {application.rejectionReason}
+                    </p>
+                  )}
+                </div>
                 <span className="text-indigo-600">View update →</span>
               </div>
             </Link>
