@@ -6,11 +6,18 @@ import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
 import { collection, addDoc } from "firebase/firestore";
 
+type RequiredSkill = {
+  skill: string;
+  importance: "must-have" | "nice-to-have";
+};
+
 export default function NewJobPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [requiredSkills, setRequiredSkills] = useState("");
+  const [requiredSkills, setRequiredSkills] = useState<RequiredSkill[]>([]);
+  const [skillInput, setSkillInput] = useState("");
+  const [atsEnabled, setAtsEnabled] = useState(true);
   const [location, setLocation] = useState("");
   const [employmentType, setEmploymentType] = useState("full-time");
   const [experienceLevel, setExperienceLevel] = useState("");
@@ -18,6 +25,20 @@ export default function NewJobPage() {
   const [salaryMax, setSalaryMax] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function addSkill() {
+    const skill = skillInput.trim();
+    if (!skill || requiredSkills.some((item) => item.skill.toLowerCase() === skill.toLowerCase())) {
+      setSkillInput("");
+      return;
+    }
+    setRequiredSkills((current) => [...current, { skill, importance: "must-have" }]);
+    setSkillInput("");
+  }
+
+  function removeSkill(skillToRemove: string) {
+    setRequiredSkills((current) => current.filter((item) => item.skill !== skillToRemove));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,7 +52,8 @@ export default function NewJobPage() {
         recruiterId: user.uid,
         title,
         description,
-        requiredSkills: requiredSkills.split(",").map((s) => s.trim()).filter(Boolean),
+        requiredSkills,
+        atsEnabled,
         location,
         employmentType,
         experienceLevel,
@@ -76,9 +98,52 @@ export default function NewJobPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700">Required skills (comma separated)</label>
-            <input value={requiredSkills} onChange={(e) => setRequiredSkills(e.target.value)} className="input-field" />
+            <label className="block text-sm font-medium text-slate-700">Required skills</label>
+            <div className="mt-2 rounded-xl border border-slate-300 bg-white p-3 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+              <div className="flex flex-wrap gap-2">
+                {requiredSkills.map((item) => (
+                  <div key={item.skill} className="flex items-center gap-1 rounded-full bg-slate-100 pl-3 text-sm text-slate-700">
+                    <span>{item.skill}</span>
+                    <select
+                      value={item.importance}
+                      onChange={(event) => setRequiredSkills((current) => current.map((skill) => skill.skill === item.skill ? { ...skill, importance: event.target.value as RequiredSkill["importance"] } : skill))}
+                      className="border-0 bg-transparent py-1 text-xs font-medium text-slate-600 focus:ring-0"
+                      aria-label={`${item.skill} importance`}
+                    >
+                      <option value="must-have">Must-have</option>
+                      <option value="nice-to-have">Nice-to-have</option>
+                    </select>
+                    <button type="button" onClick={() => removeSkill(item.skill)} className="px-2 text-slate-400 hover:text-red-600" aria-label={`Remove ${item.skill}`}>
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <input
+                value={skillInput}
+                onChange={(event) => setSkillInput(event.target.value.replace(/,/g, ""))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === ",") {
+                    event.preventDefault();
+                    addSkill();
+                  }
+                }}
+                onPaste={(event) => event.preventDefault()}
+                maxLength={60}
+                placeholder={requiredSkills.length ? "Add another skill" : "Type one skill, then press Enter"}
+                className="mt-2 w-full border-0 p-0 text-sm outline-none focus:ring-0"
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Add one skill at a time with Enter or comma.</p>
           </div>
+
+          <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" checked={atsEnabled} onChange={(event) => setAtsEnabled(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+            <span>
+              <span className="block font-medium text-slate-900">Enable ATS matching for this job</span>
+              <span className="block text-xs text-slate-500">When disabled, applicants will not receive a match score.</span>
+            </span>
+          </label>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>

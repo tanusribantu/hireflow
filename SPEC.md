@@ -44,10 +44,41 @@
 - Quick-select rejection reasons at screening stage (Skills mismatch / Experience level / Location / Position filled), optional
 - Reason visible to candidate on their status tracker
 
-### Part B — ATS Matching & Skill Verification
-- ATS match score via the C++ microservice, shown as Strong/Partial/Low
-- Skill verification quiz: timed, scenario-based, tab-focus-loss detection, permanent verified badges
-- Auto-generated rejection reason using missing-skills output when a recruiter rejects without selecting a reason, clearly labeled as system-generated
+### Part B — ATS Matching & Skill Verification (revised)
+
+Skill evidence tiers — a candidate's skills carry different weight depending
+on how well-evidenced they are:
+- Self-reported: skill listed on profile only (lowest weight)
+- Project-backed: skill tagged against a project in the candidate's profile
+	(medium weight) — when adding a project, candidate selects which of their
+	existing skills it demonstrates
+- Quiz-verified: skill has a passed, timed, scenario-based quiz badge with a
+	verified date (highest weight)
+
+Required skill importance — recruiters mark each required skill on a job
+posting as Must-have (missing this drops score significantly) or Nice-to-have
+(missing this has a small effect).
+
+Weighted match score: the C++ engine computes score using both the
+candidate's skill evidence tier and the job's per-skill importance, not a
+flat set overlap. Still shown to candidates as Strong/Partial/Low.
+
+Recruiter-side ATS visibility: every applicant card in the recruiter's Kanban
+pipeline shows that candidate's match score. A filter dropdown ("All / Low /
+Partial / Strong") lets recruiters narrow the pipeline view by match tier.
+
+Per-job ATS toggle: recruiters can enable or disable ATS matching for a
+specific job posting at creation time (default: enabled). When disabled, no
+score is calculated or shown for that posting.
+
+System-generated rejection reason: if a recruiter rejects a candidate at
+screening stage without selecting a manual reason, the system generates one
+from the C++ engine's missing-skills output, weighted by importance (e.g.
+"Missing required skill: TypeScript (must-have)"), clearly labeled as
+system-generated.
+
+No ML required: all of the above is deterministic, rule-based weighting and
+comparison — no machine learning or external AI model is used or needed.
 
 ### Part C — Resume Analysis & Recruiter Verification
 - Resume analyzer: extract skills from uploaded resume PDF

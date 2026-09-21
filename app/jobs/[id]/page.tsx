@@ -7,6 +7,12 @@ import { db, auth } from "../../../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 
+type MatchResult = {
+  matchScore: "Strong" | "Partial" | "Low";
+  matchedSkills: string[];
+  missingSkills: string[];
+};
+
 export default function JobDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { id } = params;
@@ -15,6 +21,9 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
   const [hasApplied, setHasApplied] = useState(false);
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [matchError, setMatchError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -28,7 +37,37 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
       setUser(u);
       if (!u) {
         setHasApplied(false);
+        setMatchResult(null);
+        setMatchError(null);
         return;
+      }
+
+      try {
+        setMatchResult(null);
+        const profileSnapshot = await getDoc(doc(db, "users", u.uid));
+        const profile = profileSnapshot.data() as { role?: string } | undefined;
+
+        if (profile?.role !== "recruiter") {
+          setMatchLoading(true);
+          setMatchError(null);
+          const matchResponse = await fetch("/api/match/calculate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ candidateId: u.uid, jobId: id }),
+          });
+          const matchData = await matchResponse.json();
+          if (!matchResponse.ok) {
+            throw new Error(matchData.error || "Unable to calculate match");
+          }
+          setMatchResult(matchData as MatchResult);
+        } else {
+          setMatchResult(null);
+        }
+      } catch (error) {
+        console.error("Failed to load candidate match:", error);
+        setMatchError("Match details are unavailable right now.");
+      } finally {
+        setMatchLoading(false);
       }
 
       try {
@@ -106,6 +145,24 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.14em] text-indigo-600">Open role</p>
             <h1 className="mt-1 text-3xl font-bold text-slate-900">{job.title}</h1>
+            {matchLoading && <p className="mt-3 text-sm text-slate-500">Calculating your match...</p>}
+            {matchResult && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span
+                  className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                    matchResult.matchScore === "Strong"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : matchResult.matchScore === "Partial"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {matchResult.matchScore} Match
+                </span>
+                <span className="text-sm text-slate-500">Based on your profile skills</span>
+              </div>
+            )}
+            {matchError && <p className="mt-3 text-sm text-slate-500">{matchError}</p>}
           </div>
           <div className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
             {job.location} • {job.employmentType}
@@ -120,12 +177,29 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Requirements</h3>
             <div className="mt-3 flex flex-wrap gap-2">
-              {(job.requiredSkills || []).map((skill: string) => (
-                <span key={skill} className="rounded-full bg-white px-2.5 py-1 text-sm text-slate-700 ring-1 ring-slate-200">{skill}</span>
+              {(job.requiredSkills || []).map((item: any) => (
+                <span key={typeof item === "string" ? item : item.skill} className="rounded-full bg-white px-2.5 py-1 text-sm text-slate-700 ring-1 ring-slate-200">{typeof item === "string" ? item : item.skill}</span>
               ))}
             </div>
           </div>
         </div>
+
+        {matchResult && (
+          <div className="mt-6 grid gap-4 border-t border-slate-200 pt-6 sm:grid-cols-2">
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-700">You have</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {matchResult.matchedSkills.length > 0 ? matchResult.matchedSkills.join(", ") : "No matching skills yet"}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-600">Missing</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {matchResult.missingSkills.length > 0 ? matchResult.missingSkills.join(", ") : "None - you match every listed skill"}
+              </p>
+            </div>
+          </div>
+        )}
 
         {message && <div className={`mt-5 rounded-xl px-3 py-2 text-sm ${message.includes("successfully") ? "border border-emerald-200 bg-emerald-50 text-emerald-700" : "border border-red-200 bg-red-50 text-red-700"}`}>{message}</div>}
 

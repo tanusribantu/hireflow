@@ -40,7 +40,7 @@ export default function JobsPage() {
 
       if (skillFilter) {
         const s = skillFilter.toLowerCase();
-        results = results.filter((j) => (j.requiredSkills || []).some((rs: string) => rs.toLowerCase().includes(s)));
+        results = results.filter((j) => (j.requiredSkills || []).some((rs: any) => (typeof rs === "string" ? rs : rs.skill).toLowerCase().includes(s)));
       }
       if (locationFilter) {
         const l = locationFilter.toLowerCase();
@@ -132,8 +132,8 @@ export default function JobsPage() {
 
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
-                  {(job.requiredSkills || []).map((skill: string) => (
-                    <span key={skill} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{skill}</span>
+                  {(job.requiredSkills || []).map((item: any) => (
+                    <span key={typeof item === "string" ? item : item.skill} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{typeof item === "string" ? item : item.skill}</span>
                   ))}
                 </div>
                 {appliedJobIds.has(job.id) ? (

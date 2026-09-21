@@ -20,7 +20,8 @@ export interface JobPosting {
   recruiterId: string;
   title: string;
   description: string;
-  requiredSkills: string[];
+  requiredSkills: Array<{ skill: string; importance: "must-have" | "nice-to-have" }>;
+  atsEnabled: boolean;
   location: string;
   employmentType: "full-time" | "internship" | "remote";
   experienceLevel: string;

@@ -83,9 +83,9 @@ export default function MyListingsPage() {
 
               <p className="mt-4 text-slate-600">{job.description}</p>
               <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                {(job.requiredSkills || []).map((skill: string) => (
-                  <span key={skill} className="rounded-full bg-slate-100 px-2.5 py-1">
-                    {skill}
+                {(job.requiredSkills || []).map((item: any) => (
+                  <span key={typeof item === "string" ? item : item.skill} className="rounded-full bg-slate-100 px-2.5 py-1">
+                    {typeof item === "string" ? item : item.skill}
                   </span>
                 ))}
               </div>

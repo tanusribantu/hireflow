@@ -29,8 +29,8 @@ Recruiter changes an applicant's status.
 ### `POST /api/match/calculate`
 Computes ATS match score when a candidate views a job. **This route does not compute the score itself — it fetches the required data and forwards it to the C++ matching microservice (see below), then returns that result.**
 - Input: `{ candidateId, jobId }`
-- Logic: fetch candidate skills + verifiedSkills from Firestore, fetch job requiredSkills, POST them to the C++ microservice at `http://localhost:8080/match`, return its response to the frontend
-- Output: `{ matchScore: "Strong" | "Partial" | "Low", matchedSkills: [string], missingSkills: [string] }`
+- Logic: fetch the candidate's skills, project-backed skills, and quiz-verified skills from Firestore; fetch the job's `requiredSkills` and `atsEnabled` value; if ATS is disabled, return a null score without calling the C++ service; otherwise POST the weighted skill data to the C++ microservice at `http://localhost:8080/match` and return its response to the frontend
+- Output: `{ matchScore: "Strong" | "Partial" | "Low" | null, matchedSkills: [{ skill, evidenceTier }], missingSkills: [{ skill, importance }] }`
 
 ---
 
@@ -46,21 +46,37 @@ A standalone C++ HTTP server, run as its own process, handling only the matching
 - **Input** (JSON body):
 ```json
 {
-  "candidateSkills": ["react", "javascript", "css"],
-  "jobRequiredSkills": ["react", "typescript", "css", "node"]
+  "candidateSkills": [
+    { "skill": "react", "evidenceTier": "project-backed" },
+    { "skill": "javascript", "evidenceTier": "self-reported" },
+    { "skill": "css", "evidenceTier": "quiz-verified" }
+  ],
+  "jobRequiredSkills": [
+    { "skill": "react", "importance": "must-have" },
+    { "skill": "typescript", "importance": "must-have" },
+    { "skill": "css", "importance": "nice-to-have" },
+    { "skill": "node", "importance": "nice-to-have" }
+  ]
 }
 ```
 - **Logic** (this is your actual DSA/algorithm work):
-  1. Normalize both skill lists (lowercase, trim whitespace)
-  2. Compute the intersection (matched skills) and the difference (missing skills) using sets
-  3. Score = `(matched count / required count) * 100`
-  4. Bucket: `>70 = "Strong"`, `40–70 = "Partial"`, `<40 = "Low"`
+  1. Normalize skill names (lowercase, trim whitespace) and retain each candidate skill's evidence tier and each required skill's importance.
+  2. Compute the intersection (matched skills) and the difference (missing skills) using sets keyed by normalized skill name.
+  3. Convert evidence tiers to weights: self-reported = 1, project-backed = 2, quiz-verified = 3. Convert importance to weights: nice-to-have = 1, must-have = 3.
+  4. For every required skill, calculate its weighted contribution as `evidence weight × importance weight` when matched, or zero when missing. Divide the sum of matched contributions by the maximum possible score (the sum of `3 × importance weight` for every required skill), then multiply by 100.
+  5. Bucket: `>70 = "Strong"`, `40–70 = "Partial"`, `<40 = "Low"`.
 - **Output** (JSON body):
 ```json
 {
   "matchScore": "Partial",
-  "matchedSkills": ["react", "css"],
-  "missingSkills": ["typescript", "node"]
+  "matchedSkills": [
+    { "skill": "css", "evidenceTier": "quiz-verified" },
+    { "skill": "react", "evidenceTier": "project-backed" }
+  ],
+  "missingSkills": [
+    { "skill": "node", "importance": "nice-to-have" },
+    { "skill": "typescript", "importance": "must-have" }
+  ]
 }
 ```
 

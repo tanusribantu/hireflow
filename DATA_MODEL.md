@@ -15,6 +15,7 @@ users/{userId}
 
   // candidate-only fields
   skills: [string]
+  projects: [{ title: string, description: string, demonstratesSkills: [string] }]
   experience: [{ company, role, startDate, endDate }]
   education: [{ institution, degree, year }]
   resumeUrl: string          // Firebase Storage link
@@ -30,7 +31,8 @@ jobs/{jobId}
   recruiterId: string        // ref to users/{userId}
   title: string
   description: string
-  requiredSkills: [string]
+  requiredSkills: [{ skill: string, importance: "must-have" | "nice-to-have" }]
+  atsEnabled: boolean          // default: true
   location: string
   employmentType: "full-time" | "internship" | "remote"
   experienceLevel: string
@@ -49,7 +51,9 @@ applications/{applicationId}
   jobId: string               // ref to jobs/{jobId}
   status: "Applied" | "Under Review" | "Shortlisted" | "Interview Scheduled" | "Interview Completed" | "Offer" | "Rejected"
   statusHistory: [{ status: string, timestamp: timestamp }]
-  matchScore: "Strong" | "Partial" | "Low"
+  matchScore: "Strong" | "Partial" | "Low" | null
+  matchedSkills: [{ skill: string, evidenceTier: "self-reported" | "project-backed" | "quiz-verified" }]
+  missingSkills: [{ skill: string, importance: "must-have" | "nice-to-have" }]
   rejectionReason: string     // optional at screening stage, required after interview stage
   rejectionReasonSource: "recruiter" | "system"
   appliedAt: timestamp
