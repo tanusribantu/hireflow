@@ -17,6 +17,90 @@ const columns = [
   { label: "Rejected", statuses: ["Rejected"] },
 ];
 
+const matchFilterOptions = ["All", "Low", "Partial", "Strong"] as const;
+type MatchFilter = (typeof matchFilterOptions)[number];
+
+function normalizeSkillName(skill: string) {
+  return skill.trim().toLowerCase();
+}
+
+function chooseHigherEvidenceTier(current: string | undefined, incoming: string) {
+  const weights: Record<string, number> = {
+    "self-reported": 1,
+    "project-backed": 2,
+    "quiz-verified": 3,
+  };
+  const currentWeight = current ? weights[current] ?? 0 : 0;
+  const incomingWeight = weights[incoming] ?? 0;
+  return incomingWeight > currentWeight ? incoming : current ?? incoming;
+}
+
+function buildCandidateSkillEvidence(candidate: any) {
+  const evidenceMap: Record<string, string> = {};
+  for (const skill of Array.isArray(candidate?.skills) ? candidate.skills : []) {
+    if (typeof skill !== "string") continue;
+    const normalized = normalizeSkillName(skill);
+    evidenceMap[normalized] = chooseHigherEvidenceTier(evidenceMap[normalized], "self-reported");
+  }
+  for (const project of Array.isArray(candidate?.projects) ? candidate.projects : []) {
+    if (!project || !Array.isArray(project.demonstratesSkills)) continue;
+    for (const skill of project.demonstratesSkills) {
+      if (typeof skill !== "string") continue;
+      const normalized = normalizeSkillName(skill);
+      evidenceMap[normalized] = chooseHigherEvidenceTier(evidenceMap[normalized], "project-backed");
+    }
+  }
+  for (const entry of Array.isArray(candidate?.verifiedSkills) ? candidate.verifiedSkills : []) {
+    const skillName = typeof entry === "string" ? entry : entry?.skill;
+    if (typeof skillName !== "string") continue;
+    const normalized = normalizeSkillName(skillName);
+    evidenceMap[normalized] = chooseHigherEvidenceTier(evidenceMap[normalized], "quiz-verified");
+  }
+  return evidenceMap;
+}
+
+function calculateWeightedMatch(candidate: any, job: any) {
+  const evidenceMap = buildCandidateSkillEvidence(candidate);
+  const requiredSkills = Array.isArray(job?.requiredSkills) ? job.requiredSkills : [];
+
+  if (!requiredSkills.length) {
+    return { matchScore: null, matchedSkills: [], missingSkills: [] };
+  }
+
+  let weightedTotal = 0;
+  let maxPossible = 0;
+  const matchedSkills: Array<{ skill: string; evidenceTier: string }> = [];
+  const missingSkills: Array<{ skill: string; importance: string }> = [];
+
+  for (const requiredSkill of requiredSkills) {
+    const skillName = typeof requiredSkill === "string" ? requiredSkill : requiredSkill?.skill;
+    if (typeof skillName !== "string") continue;
+    const normalized = normalizeSkillName(skillName);
+    const importance = typeof requiredSkill === "string" ? "nice-to-have" : requiredSkill?.importance === "must-have" ? "must-have" : "nice-to-have";
+    const importanceWeight = importance === "must-have" ? 3 : 1;
+    maxPossible += 3 * importanceWeight;
+
+    const evidenceTier = evidenceMap[normalized];
+    if (!evidenceTier) {
+      missingSkills.push({ skill: skillName.trim(), importance });
+      continue;
+    }
+
+    const evidenceWeight = evidenceTier === "quiz-verified" ? 3 : evidenceTier === "project-backed" ? 2 : 1;
+    weightedTotal += evidenceWeight * importanceWeight;
+    matchedSkills.push({ skill: skillName.trim(), evidenceTier });
+  }
+
+  if (maxPossible === 0) {
+    return { matchScore: null, matchedSkills: [], missingSkills: [] };
+  }
+
+  const percentage = (weightedTotal / maxPossible) * 100;
+  const matchScore = percentage > 70 ? "Strong" : percentage >= 40 ? "Partial" : "Low";
+
+  return { matchScore, matchedSkills, missingSkills };
+}
+
 function ApplicantsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -26,6 +110,7 @@ function ApplicantsPageContent() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [reasonById, setReasonById] = useState<Record<string, string>>({});
   const [pendingStatusById, setPendingStatusById] = useState<Record<string, string>>({});
+  const [matchFilter, setMatchFilter] = useState<MatchFilter>("All");
 
   async function loadApplicants(user: any) {
     const jobsSnap = await getDocs(query(collection(db, "jobs"), where("recruiterId", "==", user.uid)));
@@ -40,7 +125,11 @@ function ApplicantsPageContent() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to load applicants");
-      return { ...job, applications: data.applications || [] };
+      const applications = (data.applications || []).map((application: any) => ({
+        ...application,
+        ...(application.candidate ? calculateWeightedMatch(application.candidate, job) : { matchScore: null, matchedSkills: [], missingSkills: [] }),
+      }));
+      return { ...job, applications };
     }));
     setItems(results);
   }
@@ -106,6 +195,11 @@ function ApplicantsPageContent() {
     updateStatus(application, newStatus);
   }
 
+  const filteredJobs = items.map((job) => ({
+    ...job,
+    applications: (job.applications || []).filter((application: any) => matchFilter === "All" || application.matchScore === matchFilter),
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -117,23 +211,48 @@ function ApplicantsPageContent() {
         <Link href="/jobs/new" className="btn-primary">Post a job</Link>
       </div>
 
+      <div className="card flex items-center justify-end gap-3">
+        <label className="text-sm font-medium text-slate-700">Filter by match score</label>
+        <select
+          value={matchFilter}
+          onChange={(event) => setMatchFilter(event.target.value as MatchFilter)}
+          className="input-field w-auto min-w-[140px]"
+        >
+          {matchFilterOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </div>
+
       {loading ? <LoadingCardList count={3} /> : error ? (
         <div className="card text-center"><p className="text-red-600">{error}</p></div>
-      ) : items.length === 0 ? (
+      ) : filteredJobs.length === 0 ? (
         <div className="card text-center"><h2 className="text-xl font-semibold">No applicants yet</h2><p className="mt-2 text-slate-600">Applicants will appear here as candidates apply.</p></div>
       ) : (
         <div className="space-y-8">
-          {items.map((job) => (
+          {filteredJobs.map((job) => (
             <section key={job.id} className="space-y-4">
               <div className="flex items-center justify-between"><div><h2 className="text-xl font-semibold text-slate-900">{job.title}</h2><p className="text-sm text-slate-600">{job.location}</p></div><Link href={`/jobs/${job.id}/applicants`} className="btn-secondary">Open job view</Link></div>
               <div className="grid gap-4 overflow-x-auto pb-2 xl:grid-cols-6">
                 {columns.map((column) => {
-                  const applications = job.applications.filter((application: any) => column.statuses.includes(application.status || "Applied"));
+                  const applications = (job.applications || []).filter((application: any) => column.statuses.includes(application.status || "Applied"));
                   return <div key={column.label} className="min-w-[260px] rounded-2xl bg-slate-100 p-3">
                     <div className="flex items-center justify-between"><h3 className="font-semibold text-slate-800">{column.label}</h3><span className="text-sm text-slate-500">{applications.length}</span></div>
                     <div className="mt-3 space-y-3">
                       {applications.map((application: any) => <article key={application.id} className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-                        <div className="flex items-start justify-between gap-2"><div><h4 className="font-semibold text-slate-900">{application.candidate?.name || "Candidate"}</h4><p className="mt-1 text-xs text-slate-500">{application.status || "Applied"}</p></div>{application.candidate?.resumeUrl && <a href={application.candidate.resumeUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-indigo-600">Resume</a>}</div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="font-semibold text-slate-900">{application.candidate?.name || "Candidate"}</h4>
+                            <p className="mt-1 text-xs text-slate-500">{application.status || "Applied"}</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                            application.matchScore === "Strong"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : application.matchScore === "Partial"
+                                ? "bg-amber-100 text-amber-800"
+                                : application.matchScore === "Low"
+                                  ? "bg-slate-200 text-slate-700"
+                                  : "bg-slate-100 text-slate-500"
+                          }`}>{application.matchScore || "N/A"}</span>
+                        </div>
                         <p className="mt-3 text-xs text-slate-600">{(application.candidate?.skills || []).slice(0, 4).join(", ") || "Skills not listed"}</p>
                         <select value={pendingStatusById[application.id] || application.status || "Applied"} disabled={updatingId === application.id} onChange={(event) => handleStatusSelection(application, event.target.value)} className="input-field mt-3 text-sm">
                           {columns.flatMap((stage) => stage.statuses).map((status) => <option key={status}>{status}</option>)}

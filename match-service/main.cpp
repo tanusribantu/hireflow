@@ -4,54 +4,108 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
-#include <set>
+#include <map>
 #include <string>
+#include <vector>
 
 using json = nlohmann::json;
 
-std::string normalizeSkill(const std::string& skill) {
-    auto first = std::find_if_not(skill.begin(), skill.end(), [](unsigned char character) {
-        return std::isspace(character);
-    });
-    auto last = std::find_if_not(skill.rbegin(), skill.rend(), [](unsigned char character) {
-        return std::isspace(character);
-    }).base();
-
-    if (first >= last) {
-        return "";
+std::string normalizeText(const std::string& value) {
+    std::string trimmed = value;
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front()))) {
+        trimmed.erase(trimmed.begin());
+    }
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back()))) {
+        trimmed.pop_back();
     }
 
-    std::string normalized(first, last);
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char character) {
+    std::transform(trimmed.begin(), trimmed.end(), trimmed.begin(), [](unsigned char character) {
         return static_cast<char>(std::tolower(character));
     });
-    return normalized;
+    return trimmed;
 }
 
-std::set<std::string> normalizeSkills(const json& skills) {
-    std::set<std::string> normalizedSkills;
-    for (const auto& skill : skills) {
-        const std::string normalized = normalizeSkill(skill.get<std::string>());
-        if (!normalized.empty()) {
-            normalizedSkills.insert(normalized);
-        }
+std::string normalizeTier(const std::string& tier) {
+    const std::string normalized = normalizeText(tier);
+    if (normalized == "quiz verified" || normalized == "quiz-verified" || normalized == "quiz_verified") {
+        return "quiz-verified";
     }
-    return normalizedSkills;
+    if (normalized == "project backed" || normalized == "project-backed" || normalized == "project_backed") {
+        return "project-backed";
+    }
+    return "self-reported";
 }
 
-std::string scoreBucket(std::size_t matchedCount, std::size_t requiredCount) {
-    if (requiredCount == 0) {
-        return "Low";
+std::string normalizeImportance(const std::string& importance) {
+    const std::string normalized = normalizeText(importance);
+    if (normalized == "must have" || normalized == "must-have" || normalized == "must_have") {
+        return "must-have";
     }
+    return "nice-to-have";
+}
 
-    const double score = (static_cast<double>(matchedCount) / requiredCount) * 100.0;
-    if (score > 70.0) {
+int evidenceWeight(const std::string& evidenceTier) {
+    if (evidenceTier == "quiz-verified") {
+        return 3;
+    }
+    if (evidenceTier == "project-backed") {
+        return 2;
+    }
+    return 1;
+}
+
+int importanceWeight(const std::string& importance) {
+    return importance == "must-have" ? 3 : 1;
+}
+
+std::string scoreBucket(double weightedScore) {
+    if (weightedScore > 70.0) {
         return "Strong";
     }
-    if (score >= 40.0) {
+    if (weightedScore >= 40.0) {
         return "Partial";
     }
     return "Low";
+}
+
+json readCandidateSkill(const json& item) {
+    if (item.is_string()) {
+        return {
+            {"skill", normalizeText(item.get<std::string>())},
+            {"evidenceTier", "self-reported"}
+        };
+    }
+    if (item.is_object()) {
+        std::string skill = item.contains("skill") ? item["skill"].get<std::string>() : "";
+        std::string evidenceTier = item.contains("evidenceTier") ? item["evidenceTier"].get<std::string>() : "self-reported";
+        if (!skill.empty()) {
+            return {
+                {"skill", normalizeText(skill)},
+                {"evidenceTier", normalizeTier(evidenceTier)}
+            };
+        }
+    }
+    return json::object();
+}
+
+json readRequiredSkill(const json& item) {
+    if (item.is_string()) {
+        return {
+            {"skill", normalizeText(item.get<std::string>())},
+            {"importance", "nice-to-have"}
+        };
+    }
+    if (item.is_object()) {
+        std::string skill = item.contains("skill") ? item["skill"].get<std::string>() : "";
+        std::string importance = item.contains("importance") ? item["importance"].get<std::string>() : "nice-to-have";
+        if (!skill.empty()) {
+            return {
+                {"skill", normalizeText(skill)},
+                {"importance", normalizeImportance(importance)}
+            };
+        }
+    }
+    return json::object();
 }
 
 int main() {
@@ -67,39 +121,77 @@ int main() {
                 return;
             }
 
-            for (const auto& skill : body["candidateSkills"]) {
-                if (!skill.is_string()) {
+            std::map<std::string, std::string> bestEvidence;
+            for (const auto& candidateSkill : body["candidateSkills"]) {
+                const json parsedSkill = readCandidateSkill(candidateSkill);
+                if (parsedSkill.empty()) {
                     response.status = 400;
-                    response.set_content(R"({"error":"skills must contain only strings"})", "application/json");
+                    response.set_content(R"({"error":"candidateSkills entries must be strings or objects with skill and evidenceTier"})", "application/json");
                     return;
                 }
-            }
-            for (const auto& skill : body["jobRequiredSkills"]) {
-                if (!skill.is_string()) {
+                const std::string normalizedSkill = parsedSkill["skill"].get<std::string>();
+                const std::string evidenceTier = parsedSkill["evidenceTier"].get<std::string>();
+                if (normalizedSkill.empty()) {
                     response.status = 400;
-                    response.set_content(R"({"error":"skills must contain only strings"})", "application/json");
+                    response.set_content(R"({"error":"candidate skill name cannot be empty"})", "application/json");
                     return;
+                }
+                if (!bestEvidence.count(normalizedSkill) || evidenceWeight(evidenceTier) > evidenceWeight(bestEvidence[normalizedSkill])) {
+                    bestEvidence[normalizedSkill] = evidenceTier;
                 }
             }
 
-            const std::set<std::string> candidateSkills = normalizeSkills(body["candidateSkills"]);
-            const std::set<std::string> requiredSkills = normalizeSkills(body["jobRequiredSkills"]);
-            std::set<std::string> matchedSkills;
-            std::set<std::string> missingSkills;
+            std::map<std::string, std::string> requiredImportance;
+            for (const auto& requiredSkill : body["jobRequiredSkills"]) {
+                const json parsedSkill = readRequiredSkill(requiredSkill);
+                if (parsedSkill.empty()) {
+                    response.status = 400;
+                    response.set_content(R"({"error":"jobRequiredSkills entries must be strings or objects with skill and importance"})", "application/json");
+                    return;
+                }
+                const std::string normalizedSkill = parsedSkill["skill"].get<std::string>();
+                const std::string importance = parsedSkill["importance"].get<std::string>();
+                if (normalizedSkill.empty()) {
+                    response.status = 400;
+                    response.set_content(R"({"error":"required skill name cannot be empty"})", "application/json");
+                    return;
+                }
+                if (!requiredImportance.count(normalizedSkill) || importanceWeight(importance) > importanceWeight(requiredImportance[normalizedSkill])) {
+                    requiredImportance[normalizedSkill] = importance;
+                }
+            }
 
-            std::set_intersection(
-                candidateSkills.begin(), candidateSkills.end(),
-                requiredSkills.begin(), requiredSkills.end(),
-                std::inserter(matchedSkills, matchedSkills.begin()));
-            std::set_difference(
-                requiredSkills.begin(), requiredSkills.end(),
-                candidateSkills.begin(), candidateSkills.end(),
-                std::inserter(missingSkills, missingSkills.begin()));
+            double matchedContributionTotal = 0.0;
+            double maxPossibleScore = 0.0;
+            json matchedSkills = json::array();
+            json missingSkills = json::array();
+
+            for (const auto& [skillName, importance] : requiredImportance) {
+                maxPossibleScore += 3.0 * static_cast<double>(importanceWeight(importance));
+                if (bestEvidence.count(skillName)) {
+                    const std::string evidenceTier = bestEvidence[skillName];
+                    const double contribution = static_cast<double>(evidenceWeight(evidenceTier)) * static_cast<double>(importanceWeight(importance));
+                    matchedContributionTotal += contribution;
+                    matchedSkills.push_back({
+                        {"skill", skillName},
+                        {"evidenceTier", evidenceTier}
+                    });
+                } else {
+                    missingSkills.push_back({
+                        {"skill", skillName},
+                        {"importance", importance}
+                    });
+                }
+            }
+
+            const double percentage = maxPossibleScore > 0.0
+                ? (matchedContributionTotal / maxPossibleScore) * 100.0
+                : 0.0;
 
             json result = {
-                {"matchScore", scoreBucket(matchedSkills.size(), requiredSkills.size())},
+                {"matchScore", scoreBucket(percentage)},
                 {"matchedSkills", matchedSkills},
-                {"missingSkills", missingSkills},
+                {"missingSkills", missingSkills}
             };
             response.set_content(result.dump(), "application/json");
         } catch (const json::exception&) {

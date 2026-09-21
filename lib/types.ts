@@ -9,6 +9,7 @@ export interface UserProfile {
   phoneVerified: boolean;
   createdAt: string;
   skills?: string[];
+  projects?: Array<{ title: string; description: string; demonstratesSkills: string[] }>;
   experience?: Array<{ company: string; role: string; startDate: string; endDate?: string }>;
   education?: Array<{ institution: string; degree: string; year: string }>;
   resumeUrl?: string;

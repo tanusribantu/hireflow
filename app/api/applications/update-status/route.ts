@@ -11,6 +11,75 @@ const statuses = new Set([
   "Rejected",
 ]);
 
+function normalizeSkillName(skill: string) {
+  return skill.trim().toLowerCase();
+}
+
+function chooseHigherEvidenceTier(current: string | undefined, incoming: string) {
+  const weights: Record<string, number> = {
+    "self-reported": 1,
+    "project-backed": 2,
+    "quiz-verified": 3,
+  };
+  const currentWeight = current ? weights[current] ?? 0 : 0;
+  const incomingWeight = weights[incoming] ?? 0;
+  return incomingWeight > currentWeight ? incoming : current ?? incoming;
+}
+
+function buildCandidateSkillEvidence(candidate: any) {
+  const evidenceMap: Record<string, string> = {};
+
+  for (const skill of Array.isArray(candidate?.skills) ? candidate.skills : []) {
+    if (typeof skill !== "string") continue;
+    const normalized = normalizeSkillName(skill);
+    evidenceMap[normalized] = chooseHigherEvidenceTier(evidenceMap[normalized], "self-reported");
+  }
+
+  for (const project of Array.isArray(candidate?.projects) ? candidate.projects : []) {
+    if (!project || !Array.isArray(project.demonstratesSkills)) continue;
+    for (const skill of project.demonstratesSkills) {
+      if (typeof skill !== "string") continue;
+      const normalized = normalizeSkillName(skill);
+      evidenceMap[normalized] = chooseHigherEvidenceTier(evidenceMap[normalized], "project-backed");
+    }
+  }
+
+  for (const entry of Array.isArray(candidate?.verifiedSkills) ? candidate.verifiedSkills : []) {
+    const skillName = typeof entry === "string" ? entry : entry?.skill;
+    if (typeof skillName !== "string") continue;
+    const normalized = normalizeSkillName(skillName);
+    evidenceMap[normalized] = chooseHigherEvidenceTier(evidenceMap[normalized], "quiz-verified");
+  }
+
+  return evidenceMap;
+}
+
+function generateSystemRejectionReason(job: any, candidate: any) {
+  const evidenceMap = buildCandidateSkillEvidence(candidate);
+  const missing = (Array.isArray(job?.requiredSkills) ? job.requiredSkills : [])
+    .map((skillEntry: any) => {
+      const skillName = typeof skillEntry === "string" ? skillEntry : skillEntry?.skill;
+      if (typeof skillName !== "string") return null;
+      const normalized = normalizeSkillName(skillName);
+      const importance = typeof skillEntry === "string" ? "nice-to-have" : skillEntry?.importance === "must-have" ? "must-have" : "nice-to-have";
+      return { skill: skillName.trim(), importance, normalized };
+    })
+    .filter((skill: { skill: string; importance: string; normalized: string } | null): skill is { skill: string; importance: string; normalized: string } => !!skill)
+    .filter((skill: { skill: string; importance: string; normalized: string }) => !evidenceMap[skill.normalized]);
+
+  if (!missing.length) {
+    return "Missing required skill: role requirements were not met.";
+  }
+
+  const prioritized = [...missing].sort((a, b) => {
+    const weight = (value: string) => value === "must-have" ? 1 : 0;
+    return weight(b.importance) - weight(a.importance);
+  });
+
+  const first = prioritized[0];
+  return `Missing required skill: ${first.skill} (${first.importance})`;
+}
+
 export async function POST(req: NextRequest) {
   if (!adminAuth || !adminDb) {
     return NextResponse.json({ success: false, error: "Server not configured with Firebase service account" }, { status: 500 });
@@ -56,9 +125,18 @@ export async function POST(req: NextRequest) {
       status: newStatus,
       statusHistory: [...(application.statusHistory || []), { status: newStatus, timestamp }],
     };
-    if (newStatus === "Rejected" && rejectionReason?.trim()) {
-      update.rejectionReason = rejectionReason.trim();
-      update.rejectionReasonSource = "recruiter";
+
+    if (newStatus === "Rejected") {
+      if (rejectionReason?.trim()) {
+        update.rejectionReason = rejectionReason.trim();
+        update.rejectionReasonSource = "recruiter";
+      } else if (["Applied", "Under Review", "Shortlisted"].includes(application.status || "")) {
+        const candidateSnapshot = await adminDb.collection("users").doc(application.candidateId).get();
+        const candidate = candidateSnapshot.exists ? candidateSnapshot.data() as any : {};
+        const generatedReason = generateSystemRejectionReason(jobSnapshot.data() as any, candidate);
+        update.rejectionReason = generatedReason;
+        update.rejectionReasonSource = "system";
+      }
     }
 
     await applicationRef.update(update);

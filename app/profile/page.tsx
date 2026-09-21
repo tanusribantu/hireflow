@@ -102,6 +102,94 @@ export default function ProfilePage() {
             />
           </div>
 
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">Projects</h2>
+              <button type="button" onClick={() => setProfile((current: any) => ({ ...current, projects: [...(current.projects || []), { title: "", description: "", demonstratesSkills: [] }] }))} className="btn-secondary text-sm">
+                Add project
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {(profile.projects || []).map((project: any, index: number) => (
+                <div key={`${project.title || "project"}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700">Project title</label>
+                      <input
+                        value={project.title || ""}
+                        onChange={(e) => setProfile((current: any) => ({
+                          ...current,
+                          projects: (current.projects || []).map((item: any, itemIndex: number) => itemIndex === index ? { ...item, title: e.target.value } : item),
+                        }))}
+                        className="input-field"
+                        placeholder="e.g. Hiring dashboard"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700">Description</label>
+                      <textarea
+                        rows={2}
+                        value={project.description || ""}
+                        onChange={(e) => setProfile((current: any) => ({
+                          ...current,
+                          projects: (current.projects || []).map((item: any, itemIndex: number) => itemIndex === index ? { ...item, description: e.target.value } : item),
+                        }))}
+                        className="input-field"
+                        placeholder="What did this project build?"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <p className="text-sm font-medium text-slate-700">Skills this project demonstrates</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(profile.skills || []).length === 0 ? (
+                        <p className="text-xs text-slate-500">Add some skills above before tagging a project.</p>
+                      ) : (profile.skills || []).map((skill: string) => {
+                        const checked = (project.demonstratesSkills || []).includes(skill);
+                        return (
+                          <label key={`${skill}-${index}`} className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setProfile((current: any) => ({
+                                ...current,
+                                projects: (current.projects || []).map((item: any, itemIndex: number) => {
+                                  if (itemIndex !== index) return item;
+                                  const demonstratesSkills = item.demonstratesSkills || [];
+                                  return {
+                                    ...item,
+                                    demonstratesSkills: checked
+                                      ? demonstratesSkills.filter((entry: string) => entry !== skill)
+                                      : [...demonstratesSkills, skill],
+                                  };
+                                }),
+                              }))}
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            {skill}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                    <button type="button" onClick={() => setProfile((current: any) => ({ ...current, projects: (current.projects || []).filter((_: any, itemIndex: number) => itemIndex !== index) }))} className="text-sm font-medium text-red-600 hover:text-red-700">
+                      Remove project
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {!(profile.projects || []).length && (
+                <p className="text-sm text-slate-500">No projects yet. Add one to show project-backed skill evidence.</p>
+              )}
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700">Experience (JSON array or leave blank)</label>
             <textarea
